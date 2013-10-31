@@ -10,10 +10,59 @@
 #include <time.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 const int EPOLL_SIZE = 10;
 const int EPOLL_EVENTS = 10;
 const int buf_size = 100;
+const int ans_size = 5000;
+//const int shm_buf_size = 4096;
+int fd[2];
+//int shmid;
+//void* shm;
+
+typedef struct task_queue_elem_t
+{
+    int fd;
+    struct task_queue_elem_t* next;
+} task_queue_elem_t;
+
+typedef struct tasks_queue_t
+{
+    task_queue_elem_t* head;
+    task_queue_elem_t* tail;
+}tasks_queue_t;
+
+tasks_queue_t* tasks;
+
+void add_task(tasks_queue_t *queue, int fd)
+{
+    task_queue_elem_t* elem = (task_queue_elem_t*)malloc(sizeof(task_queue_elem_t));
+    elem->next = NULL;
+    elem->fd = fd;
+    if (queue->head == NULL)
+    {
+        queue->head = elem;
+        queue->tail = elem;
+    }
+    else
+    {
+        (*(queue->tail)).next = elem;
+        queue->tail = queue->tail->next;
+    }
+    //tasks_count++;
+}
+
+int delete_task(tasks_queue_t *queue)
+{
+    int sfd = queue->head->fd;
+    task_queue_elem_t* head = queue->head;
+    free(head);
+    queue->head = queue->head->next;
+    return sfd;
+    //ppool->tasks_count--;
+}
 
 typedef struct list_answer_file_t
 {
@@ -38,10 +87,12 @@ char* get_list_answer_file(list_answer_file_t* answer);
 list_answer_t* get_list_answer(char* path)
 {
     list_answer_t* answer = (list_answer_t*)malloc(sizeof(list_answer_t));
-    printf("%s\n", path);
+    //answer->count = 0;
     DIR* dir = opendir(path);
     if (dir == NULL)
-        return NULL; ///////////////нет такой папки
+    {
+        return NULL;
+    }
     else
     {
         struct dirent* dirstr;
@@ -65,6 +116,7 @@ list_answer_t* get_list_answer(char* path)
             files[i].time = fileinfo.st_ctim;
             answer->files = files;
         }
+        //closedir(dir);
         return answer;
     }
 }
@@ -76,29 +128,54 @@ typedef struct procpool_t
     int efd;
     struct epoll_event* evlist;//[EPOLL_EVENTS];
     int busy;
+    //tasks_queue_t* tasks;
+    //int tasks_count;
 }procpool_t;
 
 procpool_t* ppool;
+int server_sockfd;
 
 void procpool()
 {
+    close(server_sockfd);
     while (1)
-    {
-        int ready = epoll_wait(ppool->efd, ppool->evlist, EPOLL_EVENTS, -1);
-        if (ready > 0)
+    {        
+        int client_sfd;
+        read(fd[0], &client_sfd, sizeof(int));
+        //tasks_queue_t* t_queue = (tasks_queue_t*)shm;
+        //client_sfd = delete_task(tasks);
+
+        printf("client_sockfd %i\n", client_sfd);
+        char** buf = (char**)malloc(sizeof(char*)*2);
+        char* command = (char*)malloc(sizeof(char)*buf_size);
+        read(client_sfd, command, buf_size);
+
+        buf[0] = (char*)malloc(sizeof(char)*5);
+        buf[1] = (char*)malloc(sizeof(char)*buf_size);
+
+        int i = 0;
+        while ((i < strlen(command)) && (command[i] != ' '))
         {
-            struct epoll_event ev = ppool->evlist[0];
-            epoll_ctl(ppool->efd, EPOLL_CTL_DEL, ppool->evlist[0].data.fd, &ev);
-            char* buf[2];
-            buf[0] = (char*)malloc(sizeof(char)*5);
-            buf[1] = (char*)malloc(sizeof(char)*buf_size);
-            read(ev.data.fd, buf[0], sizeof(buf[0]));
-            read(ev.data.fd, buf[1], sizeof(buf[1]));
-            close(ev.data.fd);
-            free(buf[0]);
-            free(buf[1]);
+            buf[0][i] = command[i];
+            i++;
         }
+        while ((i < strlen(command)) && (command[i] == ' '))
+        {
+            i++;
+        }
+        int i1 = i;
+        while ((i < strlen(command)))
+        {
+            buf[1][i - i1] = command[i];
+            i++;
+        }
+        printf("%s\n", buf[1]);
+        write(client_sfd, buf[1], strlen(buf[1])*sizeof(char));
+
+        close(client_sfd);
+
     }
+    //shmctl(shmid, IPC_RMID, NULL);
 }
 
 procpool_t* procpool_create(int count)
@@ -114,11 +191,12 @@ procpool_t* procpool_create(int count)
     {
         pid_t pid = fork();
         if (pid != 0)
-        {
+        {           
             pool->pid[i] = pid;
         }
         else
         {
+            close(fd[1]);
             procpool();
         }
         pool->size++;
@@ -128,7 +206,8 @@ procpool_t* procpool_create(int count)
 
 int main()
 {
-    int server_sockfd, client_sockfd;
+    pipe(fd);
+    int client_sockfd;
     int server_len, client_len;
     struct sockaddr_in server_address;
     struct sockaddr_in client_address;
@@ -137,80 +216,150 @@ int main()
     server_address.sin_addr.s_addr = inet_addr("127.0.0.1");
     server_address.sin_port = 9734;
     server_len = sizeof(server_address);
-    //ppool = procpool_create(5);
     bind(server_sockfd, (struct sockaddr*)&server_address, server_len);
     listen(server_sockfd,5);
     signal(SIGCHLD,SIG_IGN);
     int efd = epoll_create(EPOLL_SIZE);
     struct epoll_event evlist[EPOLL_EVENTS];
+    tasks = (tasks_queue_t*)malloc(sizeof(tasks_queue_t));
+    tasks->head = NULL;
+    tasks->tail = NULL;
+
+    /*key_t key = 123456;
+
+    shmid = shmget(key, shm_buf_size, IPC_CREAT|0666);
+    if (shmid == -1)
+    {
+        perror("shmget");
+        exit(EXIT_FAILURE);
+    }
+    shm = shmat(shmid,NULL,0);
+    if (shm == (void*)-1)
+    {
+        perror("shmat");
+        exit(EXIT_FAILURE);
+    }
+    tasks_queue_t* t_queue = (tasks_queue_t*)shm;
+    t_queue->head = NULL;
+    t_queue->tail = NULL;*/
+    /*struct epoll_event ev;
+    ev.data.fd = server_sockfd;
+    ev.events = EPOLLIN;
+    epoll_ctl(efd, EPOLL_CTL_ADD, server_sockfd, &ev);*/
     while(1)
     {
-        char* buf[2];
-        buf[0] = (char*)malloc(sizeof(char)*5);
-        buf[1] = (char*)malloc(sizeof(char)*buf_size);
         printf("server waiting\n");
         client_len = sizeof(client_address);
         client_sockfd = accept(server_sockfd, (struct sockaddr*)&client_address, &client_len);
-        /*struct epoll_event ev;
+        struct epoll_event ev;
         ev.data.fd = client_sockfd;
         ev.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_ADD, client_sockfd, &ev);
+        /*if (ppool == NULL)
+        {
+            ppool = procpool_create(5);
+            close(fd[0]);
+        }*/
         int ready = epoll_wait(efd, evlist, EPOLL_EVENTS, -1);
         int j;
         for (j = 0; j < ready; j++)
         {
-            read(evlist[j].data.fd, buf[0], sizeof(buf[0]));
-            read(evlist[j].data.fd, buf[1], sizeof(buf[1]));
-            //write(evlist[j].data.fd, buf[0], sizeof(buf[0]));
-        }
-        epoll_ctl(efd, EPOLL_CTL_DEL, client_sockfd, &ev);
-        close(client_sockfd);*/
-
-        if (fork() == 0)
-        {
-            read(client_sockfd, buf[0], sizeof(buf[0]));
-            read(client_sockfd, buf[1], buf_size);
-            printf("%d\n", strlen(buf[0]));
-            if (buf[0][0] == 'L')
+            int cfd = evlist[j].data.fd;
+            add_task(tasks, cfd);
+            //write(fd[1],&cfd,sizeof(int));
+            if (fork() == 0)
             {
-                printf("%d\n", sizeof(buf[1]));
-                printf("list %s\n", buf[1]);
+
+            int client_sfd = delete_task(tasks);
+            //while (command[0] != 'q')
+            //{
+            char** buf = (char**)malloc(sizeof(char*)*2);
+            char* command = (char*)malloc(sizeof(char)*buf_size);
+            read(client_sfd, command, buf_size);
+
+            buf[0] = (char*)malloc(sizeof(char)*5);
+            buf[1] = (char*)malloc(sizeof(char)*buf_size);
+
+            int i = 0;
+            while ((i < strlen(command)) && (command[i] != ' ') && (command[i] != '\n'))
+            {
+                buf[0][i] = command[i];
+                i++;
+            }
+            while ((i < strlen(command)) && (command[i] == ' '))
+            {
+                i++;
+            }
+            int i1 = i;
+            while ((i < strlen(command)) && (command[i] != ' ') && (command[i] != '\n'))
+            {
+                buf[1][i - i1] = command[i];
+                i++;
+            }
+            char* result = (char*)malloc(sizeof(char)*ans_size);
+            if (strcasecmp(buf[0],"LIST") == 0)
+            {
                 list_answer_t* ans = get_list_answer(buf[1]);
-                int i;
-                for (i = 0; i < ans->count; i++)
+                if (ans == NULL)
                 {
-                    char* perm = get_list_answer_file(&(ans->files[i]));
-                    printf("%s", perm);
+                    result = "wrong path\n";
                 }
+                else
+                {
+                    int i;
+                    for (i = 0; i < ans->count; i++)
+                    {
+                        char* perm = get_list_answer_file(&(ans->files[i]));
+                        //printf("%s", perm);
+                        result = strcat(result, perm);
+                    }
+                }
+
             }
             else
             {
-                if (buf[0][0] == 'C')
+                if (strcasecmp(buf[0],"CWD") == 0)
                 {
                     printf("cwd\n");
                 }
+                else
+                {
+                    result = "wrong command\n";
+                }
+            }
+            //free(command);
+           // free(buf[0]);
+            //free(buf[1]);
+
+            write(client_sfd, result, strlen(result)*sizeof(char));
+            //free(result);
+            //}
+            close(server_sockfd);
+            close(client_sfd);
+
+            exit(0);
             }
 
-            write(client_sockfd, buf[0], sizeof(buf[0]));
-            close(client_sockfd);
-            exit(0);
+            epoll_ctl(efd, EPOLL_CTL_DEL, cfd, &evlist[j]);
+            close(cfd);
         }
-        else
-        {
-            close(client_sockfd);
-        }
+
     }
+    close(server_sockfd);
+    //shmdt(shm);
+    //shmctl(shmid, IPC_RMID, NULL);
 }
 
 char* get_list_answer_file(list_answer_file_t* answer)
 {
-    char* result = (char*)malloc(sizeof(char)*buf_size);////???
-    if (S_IFDIR & answer->permissions) {
-        result[0] = 'd'; }
+    char* result = (char*)malloc(sizeof(char)*buf_size);
+
+    if (S_IFREG & answer->permissions) {
+        result[0] = '-'; }
     else
     {
-        if (S_IFREG & answer->permissions) {
-            result[0] = '-'; }
+        if (S_IFDIR & answer->permissions) {
+            result[0] = 'd'; }
         else
         {
             if (S_IFCHR & answer->permissions) {
@@ -287,6 +436,7 @@ char* get_list_answer_file(list_answer_file_t* answer)
     i++;
 
     free(l);
+    //struct passwd* userinfo = getpwuid(answer->owner);
     l = (char*)malloc(sizeof(char)*5);
     sprintf(l,"%i\n",answer->owner);
     int j = 0;
@@ -300,6 +450,7 @@ char* get_list_answer_file(list_answer_file_t* answer)
     free(l);
     l = (char*)malloc(sizeof(char)*5);
     sprintf(l,"%i\n",answer->group);
+    //struct group* groupinfo = getgrgid(answer->group);
     j = 0;
     for (j = 0; j < strlen(l); j++)
         result[j+i] = l[j];

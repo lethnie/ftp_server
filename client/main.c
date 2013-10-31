@@ -8,12 +8,13 @@
 #include <string.h>
 
 const int buf_size = 100;
+const int ans_size = 2000;
 
-int main(int argc, char*argv[])
+int main(void) //int argc, char*argv[])
 {
-    char* command = (char*)malloc(sizeof(char)*5);
-    char* path = (char*)malloc(sizeof(char)*buf_size);
-    if (argc < 3)
+    //char* command = (char*)malloc(sizeof(char)*5);
+    //char* path = (char*)malloc(sizeof(char)*buf_size);
+    /*if (argc < 3)
     {
         printf("Недостаточное число аргументов\n");
         return 0;
@@ -22,16 +23,16 @@ int main(int argc, char*argv[])
     {
         command = argv[1];
         path = argv[2];
-    }
+    }*/
+    char* command = (char*)malloc(sizeof(char)*buf_size);
+
     int sockfd;
     int len;
     struct sockaddr_in address;
     int result;
-    //scanf("%s",command);
-    //scanf("%s",path);
-    char* buf[2];
-    buf[0] = command;
-    buf[1] = path;
+    //char* buf[2];
+    //buf[0] = command;
+    //buf[1] = path;
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     address.sin_family = AF_INET;
@@ -44,12 +45,22 @@ int main(int argc, char*argv[])
         perror("client error");
         exit(1);
     }
-    printf("%d\n", strlen(buf[0]));
-    write(sockfd, buf[0], strlen(buf[0]));
-    write(sockfd, buf[1], strlen(buf[1]));
-    char buf1[5];
-    read(sockfd, buf1, sizeof(buf1));
-    printf("%s\n",buf1);
+    //printf("%i\n", sockfd);
+    getline(&command, &buf_size, stdin);
+    write(sockfd, command, strlen(command)*sizeof(char));
+    char answer[ans_size];
+    read(sockfd, answer, ans_size);
+    printf("%s",answer);
+    /*while (command[0] != 'q')
+    {
+        free(answer);
+        printf("q - exit\n");
+        getline(&command, &buf_size, stdin);
+        write(sockfd, command, strlen(command)*sizeof(char));
+        //char answer[ans_size];
+        read(sockfd, answer, ans_size);
+        printf("%s",answer);
+    }*/
     close(sockfd);
     exit(0);
 }
