@@ -43,47 +43,37 @@ char* get_list_answer(char* path)
 {
     list_answer_t* answer = (list_answer_t*)malloc(sizeof(list_answer_t));
     answer->count = 0;
-    //printf("before open\n");
     DIR* dir = opendir(path); 
 
     char* result = (char*)malloc(sizeof(char)*ans_size);
     int z = 0;
     for (z = 0; z < ans_size; z++)
         result[z] = '\0';
-    //printf("opened\n");
     if (dir == NULL)
     {
-        return "wrong path\n";
+        return "Wrong path\n";
     }
     else
     {
         struct dirent* dirstr;
-        //printf("before read\n");
         while ((dirstr = readdir(dir)) != NULL)
         {
-            //printf("start\n");
             answer->count++;
             list_answer_file_t* files = (list_answer_file_t*)malloc(sizeof(list_answer_file_t)*answer->count);
             int i = 0;
-            //printf("before cycle\n");
             for (i = 0; i < answer->count - 1; i++)
             {
                 files[i] = answer->files[i];
             }
             int j = 0;
-            //printf("filename\n");
             int length = strlen(dirstr->d_name);
             files[i].filename = (char*)malloc(sizeof(char)*(length + 1));
-
-            //printf("length % i\n", length);// %i\n", length);
             for (j = 0; j < length; j++)
             {
                 files[i].filename[j] = dirstr->d_name[j];
             }
             files[i].filename[j] = '\0';
-            //printf("filename: %s\n", files[i].filename);
             struct stat fileinfo;
-            //printf("stat\n");
             stat(files[i].filename, &fileinfo);
             files[i].number = fileinfo.st_nlink;
             files[i].filesize = fileinfo.st_size;
@@ -92,19 +82,12 @@ char* get_list_answer(char* path)
             files[i].permissions = fileinfo.st_mode;
             files[i].time = fileinfo.st_ctim;
             answer->files = files;
-            //printf("after read\n");
         }
-        //printf("after read\n");
         int i = 0;
         for (i = 0; i < answer->count; i++)
         {
-            //printf("list1\n");
             char* perm = get_list_answer_file(&(answer->files[i]));
-            //printf("list2\n");
-            //printf("perm: %s", perm);
-            //printf("strcat\n");
             result = strcat(result, perm);
-            //printf("list3\n");
         }
         rewinddir(dir);
         closedir(dir);
@@ -117,30 +100,42 @@ char* get_dir(char* d)
     char* res = (char*)malloc(sizeof(char)*buf_size);
     int i = 0;
     int j = 0;
-    printf("d: %s", d);
     while ((i < strlen(d)) && (d[i] != '\n'))
     {
         if (d[i] == '.')
         {
             if (d[i+1] == '/')
+            {
                 i += 2;
+            }
             else
             {
                 if (d[i+1] == '.')
                 {
-                    printf('second "." j: %i\n', j);
                     if (j > 0)
                     {
-                        j-=2;
-                        while ((j > 0) && (res[j] != '/'))
-                            j--;
-                        i += 2;
+                        if ((j > 2) && (res[j-2] != '.') && (res[j-3] != '.'))
+                        {
+                            j-=2;
+                            while ((j > 0) && (res[j] != '/'))
+                                j--;
+                            i += 2;
+                        }
+                        else
+                        {
+                            res[j] = '.';
+                            j++;
+                            res[j] = '.';
+                            j++;
+                            i+=2;
+                        }
                     }
                     else
                     {
                         res[j] = '.';
                         j++;
                         res[j] = '.';
+                        j++;
                         i+=2;
                     }
                 }
@@ -162,13 +157,11 @@ char* get_dir(char* d)
     }
     for (i = j; i < buf_size; i++)
         res[i] = '\0';
-    free(d);
     return res;
 }
 
 int main()
 {
-    //pipe(fd);
     int client_sockfd;
     int server_len, client_len;
     struct sockaddr_in server_address;
@@ -253,14 +246,12 @@ int main()
                         buf[1] = (char*)malloc(sizeof(char)*buf_size);
 
                         i = 0;
-                        //printf("dir1: %s\n", dir);
                         while ((i < strlen(command)) && (command[i] != ' ') && (command[i] != '\n'))
                         {
                             buf[0][i] = command[i];
                             i++;
                         }
                         buf[0][i] = '\n';
-                        //printf("command: %s", buf[0]);
 
                         while ((i < strlen(command)) && (command[i] == ' '))
                         {
@@ -269,7 +260,6 @@ int main()
                         if (command[i] == '\n')
                         {
                             buf[1] = "./";
-                            //printf("dir2: %s\n", dir);
                         }
                         else
                         {
@@ -280,14 +270,11 @@ int main()
                                 i++;
                             }
                             buf[1][i - i1] = '\n';
-                            //printf("path: %s", buf[1]);///////////////////////
 
                 }
                         int k = 0;
-                        //printf("curr_length: %i\n", curr_length);
                         for (k = 0; k < curr_length; k++)
                             dir[k] = current_dir[k];
-                        //printf("dir after current_dir: %s\n", dir);
                         k = 0;
                         while (buf[1][k] != '\n')
                         {
@@ -296,7 +283,6 @@ int main()
                         }
 
                         dir[curr_length + k] = '\0';
-                        //printf("dir after: %s\n", dir);
                         dir_length = curr_length + k - 1;
 
                 if (strncasecmp(buf[0],"LIST\n", strlen(buf[0]) - 1) == 0)
@@ -322,12 +308,6 @@ int main()
                             j++;
                         }
                         i = 0;
-                        //int i1 = 0;
-                        //if (buf[1][1] == '/')
-                         //   i1 = 2;
-                        //while ((i1 < strlen(buf[1])) && (buf[1][i1] != '\n')
-                        //       && (buf[1][i1] == '.') && (buf[1][i1+1] == '/'))
-                        //    i1+=2;
 
                         while (i < strlen(buf[1]) && (buf[1][i] != '\n'))
                         {
@@ -340,8 +320,9 @@ int main()
                             tmp[j+i] = '\0';
                         for (i = j + i + 1; i < buf_size; i++)
                             tmp[i] = '\0';
-                        //tmp = get_dir(tmp);
-                        printf("TMP: %s\n", tmp);
+
+
+                        tmp = get_dir(tmp);
 
                         DIR* d = opendir(tmp);
                         if (d == NULL)
@@ -363,7 +344,6 @@ int main()
                         else
                         {
                             int i = 0;
-                            //printf("DIR: %s\n", buf[1]);
                             for (i = 0; i < strlen(buf[1]) - 1; i++)
                             {
                                 tmp[i] = buf[1][i];
@@ -374,9 +354,8 @@ int main()
                                 tmp[i] = '\0';
                             for (i = i + 1; i < buf_size; i++)
                                 tmp[i] = '\0';
-                            //tmp = get_dir(tmp);
 
-                            printf("TMP: %s\n", tmp);
+                            tmp = get_dir(tmp);
 
                             DIR* d = opendir(tmp);
                             if (d == NULL)
