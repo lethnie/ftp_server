@@ -8,7 +8,7 @@
 #include <string.h>
 
 const int buf_size = 100;
-const int ans_size = 2000;
+const int ans_size = 5000;
 
 int main(void) //int argc, char*argv[])
 {

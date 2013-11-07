@@ -112,6 +112,60 @@ char* get_list_answer(char* path)
     }
 }
 
+char* get_dir(char* d)
+{
+    char* res = (char*)malloc(sizeof(char)*buf_size);
+    int i = 0;
+    int j = 0;
+    printf("d: %s", d);
+    while ((i < strlen(d)) && (d[i] != '\n'))
+    {
+        if (d[i] == '.')
+        {
+            if (d[i+1] == '/')
+                i += 2;
+            else
+            {
+                if (d[i+1] == '.')
+                {
+                    printf('second "." j: %i\n', j);
+                    if (j > 0)
+                    {
+                        j-=2;
+                        while ((j > 0) && (res[j] != '/'))
+                            j--;
+                        i += 2;
+                    }
+                    else
+                    {
+                        res[j] = '.';
+                        j++;
+                        res[j] = '.';
+                        i+=2;
+                    }
+                }
+                else
+                {
+                    res[j] = d[i];
+                    i++;
+                    j++;
+                }
+            }
+
+        }
+        else
+        {
+            res[j] = d[i];
+            i++;
+            j++;
+        }
+    }
+    for (i = j; i < buf_size; i++)
+        res[i] = '\0';
+    free(d);
+    return res;
+}
+
 int main()
 {
     //pipe(fd);
@@ -225,15 +279,15 @@ int main()
                                 buf[1][i - i1] = command[i];
                                 i++;
                             }
-                            buf[1][i - i1] = '\n';///////////
-                            printf("path: %s", buf[1]);///////////////////////
+                            buf[1][i - i1] = '\n';
+                            //printf("path: %s", buf[1]);///////////////////////
 
                 }
                         int k = 0;
-                        printf("curr_length: %i\n", curr_length);
+                        //printf("curr_length: %i\n", curr_length);
                         for (k = 0; k < curr_length; k++)
                             dir[k] = current_dir[k];
-                        printf("dir after current_dir: %s\n", dir);
+                        //printf("dir after current_dir: %s\n", dir);
                         k = 0;
                         while (buf[1][k] != '\n')
                         {
@@ -242,7 +296,7 @@ int main()
                         }
 
                         dir[curr_length + k] = '\0';
-                        printf("dir after: %s\n", dir);
+                        //printf("dir after: %s\n", dir);
                         dir_length = curr_length + k - 1;
 
                 if (strncasecmp(buf[0],"LIST\n", strlen(buf[0]) - 1) == 0)
@@ -268,6 +322,13 @@ int main()
                             j++;
                         }
                         i = 0;
+                        //int i1 = 0;
+                        //if (buf[1][1] == '/')
+                         //   i1 = 2;
+                        //while ((i1 < strlen(buf[1])) && (buf[1][i1] != '\n')
+                        //       && (buf[1][i1] == '.') && (buf[1][i1+1] == '/'))
+                        //    i1+=2;
+
                         while (i < strlen(buf[1]) && (buf[1][i] != '\n'))
                         {
                             tmp[j + i] = buf[1][i];
@@ -279,7 +340,7 @@ int main()
                             tmp[j+i] = '\0';
                         for (i = j + i + 1; i < buf_size; i++)
                             tmp[i] = '\0';
-
+                        //tmp = get_dir(tmp);
                         printf("TMP: %s\n", tmp);
 
                         DIR* d = opendir(tmp);
@@ -313,6 +374,7 @@ int main()
                                 tmp[i] = '\0';
                             for (i = i + 1; i < buf_size; i++)
                                 tmp[i] = '\0';
+                            //tmp = get_dir(tmp);
 
                             printf("TMP: %s\n", tmp);
 
