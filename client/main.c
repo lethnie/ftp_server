@@ -45,22 +45,23 @@ int main(void) //int argc, char*argv[])
         perror("client error");
         exit(1);
     }
-    //printf("%i\n", sockfd);
-    getline(&command, &buf_size, stdin);
-    write(sockfd, command, strlen(command)*sizeof(char));
-    char answer[ans_size];
-    read(sockfd, answer, ans_size);
-    printf("%s",answer);
-    /*while (command[0] != 'q')
+
+    while (command[0] != 'q')
     {
-        free(answer);
-        printf("q - exit\n");
+        free(command);
+        command = (char*)malloc(sizeof(char)*buf_size);
         getline(&command, &buf_size, stdin);
         write(sockfd, command, strlen(command)*sizeof(char));
-        //char answer[ans_size];
-        read(sockfd, answer, ans_size);
-        printf("%s",answer);
-    }*/
+        if (strcasecmp(command,"q\n"))
+        {
+            char* answer = (char*)malloc(sizeof(char)*ans_size);
+            read(sockfd, answer, ans_size);
+            printf("%s",answer);
+            answer = "\n";
+        }
+    }
+    free(command);
+
     close(sockfd);
     exit(0);
 }

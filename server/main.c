@@ -17,52 +17,8 @@ const int EPOLL_SIZE = 10;
 const int EPOLL_EVENTS = 10;
 const int buf_size = 100;
 const int ans_size = 5000;
-//const int shm_buf_size = 4096;
-int fd[2];
-//int shmid;
-//void* shm;
-
-typedef struct task_queue_elem_t
-{
-    int fd;
-    struct task_queue_elem_t* next;
-} task_queue_elem_t;
-
-typedef struct tasks_queue_t
-{
-    task_queue_elem_t* head;
-    task_queue_elem_t* tail;
-}tasks_queue_t;
-
-tasks_queue_t* tasks;
-
-void add_task(tasks_queue_t *queue, int fd)
-{
-    task_queue_elem_t* elem = (task_queue_elem_t*)malloc(sizeof(task_queue_elem_t));
-    elem->next = NULL;
-    elem->fd = fd;
-    if (queue->head == NULL)
-    {
-        queue->head = elem;
-        queue->tail = elem;
-    }
-    else
-    {
-        (*(queue->tail)).next = elem;
-        queue->tail = queue->tail->next;
-    }
-    //tasks_count++;
-}
-
-int delete_task(tasks_queue_t *queue)
-{
-    int sfd = queue->head->fd;
-    task_queue_elem_t* head = queue->head;
-    free(head);
-    queue->head = queue->head->next;
-    return sfd;
-    //ppool->tasks_count--;
-}
+int server_sockfd;
+//const char f_permissions[3] = {'r','w','x'};
 
 typedef struct list_answer_file_t
 {
@@ -78,35 +34,56 @@ typedef struct list_answer_file_t
 typedef struct list_answer_t
 {
     list_answer_file_t* files;
-    //char** files;
     int count;
 }list_answer_t;
 
 char* get_list_answer_file(list_answer_file_t* answer);
 
-list_answer_t* get_list_answer(char* path)
+char* get_list_answer(char* path)
 {
     list_answer_t* answer = (list_answer_t*)malloc(sizeof(list_answer_t));
-    //answer->count = 0;
-    DIR* dir = opendir(path);
+    answer->count = 0;
+    //printf("before open\n");
+    DIR* dir = opendir(path); 
+
+    char* result = (char*)malloc(sizeof(char)*ans_size);
+    int z = 0;
+    for (z = 0; z < ans_size; z++)
+        result[z] = '\0';
+    //printf("opened\n");
     if (dir == NULL)
     {
-        return NULL;
+        return "wrong path\n";
     }
     else
     {
         struct dirent* dirstr;
+        //printf("before read\n");
         while ((dirstr = readdir(dir)) != NULL)
         {
+            //printf("start\n");
             answer->count++;
             list_answer_file_t* files = (list_answer_file_t*)malloc(sizeof(list_answer_file_t)*answer->count);
             int i = 0;
+            //printf("before cycle\n");
             for (i = 0; i < answer->count - 1; i++)
             {
                 files[i] = answer->files[i];
             }
-            files[i].filename = dirstr->d_name;
+            int j = 0;
+            //printf("filename\n");
+            int length = strlen(dirstr->d_name);
+            files[i].filename = (char*)malloc(sizeof(char)*(length + 1));
+
+            //printf("length % i\n", length);// %i\n", length);
+            for (j = 0; j < length; j++)
+            {
+                files[i].filename[j] = dirstr->d_name[j];
+            }
+            files[i].filename[j] = '\0';
+            //printf("filename: %s\n", files[i].filename);
             struct stat fileinfo;
+            //printf("stat\n");
             stat(files[i].filename, &fileinfo);
             files[i].number = fileinfo.st_nlink;
             files[i].filesize = fileinfo.st_size;
@@ -115,98 +92,29 @@ list_answer_t* get_list_answer(char* path)
             files[i].permissions = fileinfo.st_mode;
             files[i].time = fileinfo.st_ctim;
             answer->files = files;
+            //printf("after read\n");
         }
-        //closedir(dir);
-        return answer;
-    }
-}
-
-typedef struct procpool_t
-{
-    pid_t* pid;
-    int size;
-    int efd;
-    struct epoll_event* evlist;//[EPOLL_EVENTS];
-    int busy;
-    //tasks_queue_t* tasks;
-    //int tasks_count;
-}procpool_t;
-
-procpool_t* ppool;
-int server_sockfd;
-
-void procpool()
-{
-    close(server_sockfd);
-    while (1)
-    {        
-        int client_sfd;
-        read(fd[0], &client_sfd, sizeof(int));
-        //tasks_queue_t* t_queue = (tasks_queue_t*)shm;
-        //client_sfd = delete_task(tasks);
-
-        printf("client_sockfd %i\n", client_sfd);
-        char** buf = (char**)malloc(sizeof(char*)*2);
-        char* command = (char*)malloc(sizeof(char)*buf_size);
-        read(client_sfd, command, buf_size);
-
-        buf[0] = (char*)malloc(sizeof(char)*5);
-        buf[1] = (char*)malloc(sizeof(char)*buf_size);
-
+        //printf("after read\n");
         int i = 0;
-        while ((i < strlen(command)) && (command[i] != ' '))
+        for (i = 0; i < answer->count; i++)
         {
-            buf[0][i] = command[i];
-            i++;
+            //printf("list1\n");
+            char* perm = get_list_answer_file(&(answer->files[i]));
+            //printf("list2\n");
+            //printf("perm: %s", perm);
+            //printf("strcat\n");
+            result = strcat(result, perm);
+            //printf("list3\n");
         }
-        while ((i < strlen(command)) && (command[i] == ' '))
-        {
-            i++;
-        }
-        int i1 = i;
-        while ((i < strlen(command)))
-        {
-            buf[1][i - i1] = command[i];
-            i++;
-        }
-        printf("%s\n", buf[1]);
-        write(client_sfd, buf[1], strlen(buf[1])*sizeof(char));
-
-        close(client_sfd);
-
+        rewinddir(dir);
+        closedir(dir);
+        return result;
     }
-    //shmctl(shmid, IPC_RMID, NULL);
-}
-
-procpool_t* procpool_create(int count)
-{
-    procpool_t *pool = (procpool_t*)malloc(sizeof(procpool_t));
-    pool->pid = (pid_t*)malloc(sizeof(pid_t)*count);
-    pool->size = 0;
-    pool->efd = epoll_create(EPOLL_SIZE);
-    pool->busy = 0;
-    pool->evlist = (struct epoll_event*)malloc(sizeof(struct epoll_event)*EPOLL_EVENTS);
-    int i = 0;
-    for (i = 0; i < count; i++)
-    {
-        pid_t pid = fork();
-        if (pid != 0)
-        {           
-            pool->pid[i] = pid;
-        }
-        else
-        {
-            close(fd[1]);
-            procpool();
-        }
-        pool->size++;
-    }
-    return pool;
 }
 
 int main()
 {
-    pipe(fd);
+    //pipe(fd);
     int client_sockfd;
     int server_len, client_len;
     struct sockaddr_in server_address;
@@ -221,208 +129,304 @@ int main()
     signal(SIGCHLD,SIG_IGN);
     int efd = epoll_create(EPOLL_SIZE);
     struct epoll_event evlist[EPOLL_EVENTS];
-    tasks = (tasks_queue_t*)malloc(sizeof(tasks_queue_t));
-    tasks->head = NULL;
-    tasks->tail = NULL;
 
-    /*key_t key = 123456;
-
-    shmid = shmget(key, shm_buf_size, IPC_CREAT|0666);
-    if (shmid == -1)
-    {
-        perror("shmget");
-        exit(EXIT_FAILURE);
-    }
-    shm = shmat(shmid,NULL,0);
-    if (shm == (void*)-1)
-    {
-        perror("shmat");
-        exit(EXIT_FAILURE);
-    }
-    tasks_queue_t* t_queue = (tasks_queue_t*)shm;
-    t_queue->head = NULL;
-    t_queue->tail = NULL;*/
-    /*struct epoll_event ev;
-    ev.data.fd = server_sockfd;
-    ev.events = EPOLLIN;
-    epoll_ctl(efd, EPOLL_CTL_ADD, server_sockfd, &ev);*/
     while(1)
     {
         printf("server waiting\n");
         client_len = sizeof(client_address);
+
         client_sockfd = accept(server_sockfd, (struct sockaddr*)&client_address, &client_len);
+
         struct epoll_event ev;
         ev.data.fd = client_sockfd;
         ev.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_ADD, client_sockfd, &ev);
-        /*if (ppool == NULL)
-        {
-            ppool = procpool_create(5);
-            close(fd[0]);
-        }*/
+
         int ready = epoll_wait(efd, evlist, EPOLL_EVENTS, -1);
         int j;
         for (j = 0; j < ready; j++)
         {
             int cfd = evlist[j].data.fd;
-            add_task(tasks, cfd);
-            //write(fd[1],&cfd,sizeof(int));
+
             if (fork() == 0)
             {
+                close(server_sockfd);
 
-            int client_sfd = delete_task(tasks);
-            //while (command[0] != 'q')
-            //{
-            char** buf = (char**)malloc(sizeof(char*)*2);
-            char* command = (char*)malloc(sizeof(char)*buf_size);
-            read(client_sfd, command, buf_size);
+                int cl = 0;
+                char* dir = (char*)malloc(sizeof(char)*buf_size);
+                int dir_length;
+                char* current_dir = (char*)malloc(sizeof(char)*buf_size);
+                int curr_length = 0;
 
-            buf[0] = (char*)malloc(sizeof(char)*5);
-            buf[1] = (char*)malloc(sizeof(char)*buf_size);
+                current_dir[0] = '\0';
+                dir[0] = '.';
+                dir[1] = '/';
+                dir[2] = '\0';
+                dir_length = 2;
 
-            int i = 0;
-            while ((i < strlen(command)) && (command[i] != ' ') && (command[i] != '\n'))
-            {
-                buf[0][i] = command[i];
-                i++;
-            }
-            while ((i < strlen(command)) && (command[i] == ' '))
-            {
-                i++;
-            }
-            int i1 = i;
-            while ((i < strlen(command)) && (command[i] != ' ') && (command[i] != '\n'))
-            {
-                buf[1][i - i1] = command[i];
-                i++;
-            }
-            char* result = (char*)malloc(sizeof(char)*ans_size);
-            if (strcasecmp(buf[0],"LIST") == 0)
-            {
-                list_answer_t* ans = get_list_answer(buf[1]);
-                if (ans == NULL)
+                char* command = (char*)malloc(sizeof(char)*buf_size);
+                char* result = (char*)malloc(sizeof(char)*ans_size);
+                while (!cl)
                 {
-                    result = "wrong path\n";
+
+                    char** buf = (char**)malloc(sizeof(char*)*2);
+                    buf[0] = (char*)malloc(sizeof(char)*5);
+                    buf[1] = (char*)malloc(sizeof(char)*buf_size);
+
+                    command = (char*)malloc(sizeof(char)*buf_size);
+
+                    int i = 0;
+
+                    read(cfd, command, buf_size);
+
+
+                    if (command[0] == 'q')
+                    {
+                        cl = 1;
+                        printf("Q\n");
+                    }
+                    else
+                    {
+                        cl = 0;
+                        free(result);
+                        free(buf[0]);
+                        free(buf[1]);
+                        char* result = (char*)malloc(sizeof(char)*ans_size);
+                        int z;
+                        for (z = 0; z < ans_size; z++)
+                            result[z] = '\0';
+                        buf[0] = (char*)malloc(sizeof(char)*5);
+                        buf[1] = (char*)malloc(sizeof(char)*buf_size);
+
+                        i = 0;
+                        //printf("dir1: %s\n", dir);
+                        while ((i < strlen(command)) && (command[i] != ' ') && (command[i] != '\n'))
+                        {
+                            buf[0][i] = command[i];
+                            i++;
+                        }
+                        buf[0][i] = '\n';
+                        //printf("command: %s", buf[0]);
+
+                        while ((i < strlen(command)) && (command[i] == ' '))
+                        {
+                            i++;
+                        }
+                        if (command[i] == '\n')
+                        {
+                            buf[1] = "./";
+                            //printf("dir2: %s\n", dir);
+                        }
+                        else
+                        {
+                            int i1 = i;
+                            while ((i < strlen(command)) && (command[i] != ' ') && (command[i] != '\n'))
+                            {
+                                buf[1][i - i1] = command[i];
+                                i++;
+                            }
+                            buf[1][i - i1] = '\n';///////////
+                            printf("path: %s", buf[1]);///////////////////////
+
+                }
+                        int k = 0;
+                        printf("curr_length: %i\n", curr_length);
+                        for (k = 0; k < curr_length; k++)
+                            dir[k] = current_dir[k];
+                        printf("dir after current_dir: %s\n", dir);
+                        k = 0;
+                        while (buf[1][k] != '\n')
+                        {
+                            dir[curr_length + k] = buf[1][k];
+                            k++;
+                        }
+
+                        dir[curr_length + k] = '\0';
+                        printf("dir after: %s\n", dir);
+                        dir_length = curr_length + k - 1;
+
+                if (strncasecmp(buf[0],"LIST\n", strlen(buf[0]) - 1) == 0)
+                {
+                    result = get_list_answer(dir);
                 }
                 else
                 {
-                    int i;
-                    for (i = 0; i < ans->count; i++)
+                    if (strncasecmp(buf[0],"CWD\n", 3) == 0)
                     {
-                        char* perm = get_list_answer_file(&(ans->files[i]));
-                        //printf("%s", perm);
-                        result = strcat(result, perm);
+                        char* tmp = (char*)malloc(sizeof(char)*buf_size);
+                        if (buf[1][0] == '.')
+                        {
+                        int i = 0;
+                        for (i = 0; i < curr_length; i++)
+                        {
+                            tmp[i] = current_dir[i];
+                        }
+                        int j = i;
+                        if ((strlen(buf[1])) && (j > 0) && (tmp[j-1] != '/') && (buf[1][0] != '/'))
+                        {
+                            tmp[j] = '/';
+                            j++;
+                        }
+                        i = 0;
+                        while (i < strlen(buf[1]) && (buf[1][i] != '\n'))
+                        {
+                            tmp[j + i] = buf[1][i];
+                            i++;
+                        }
+                        if (tmp[j+i-1] != '/')
+                            tmp[j+i] = '/';
+                        else
+                            tmp[j+i] = '\0';
+                        for (i = j + i + 1; i < buf_size; i++)
+                            tmp[i] = '\0';
+
+                        printf("TMP: %s\n", tmp);
+
+                        DIR* d = opendir(tmp);
+                        if (d == NULL)
+                            result = "Wrong path\n";
+                        else
+                        {
+                            closedir(d);
+                            for (i = 0; i < strlen(tmp); i++)
+                            {
+                                current_dir[i] = tmp[i];
+                            }
+
+                            current_dir[i] = '\n';
+                            curr_length = i;
+                            result = "Current directory was changed\n";
+                        }
+                        free(tmp);
+                        }
+                        else
+                        {
+                            int i = 0;
+                            //printf("DIR: %s\n", buf[1]);
+                            for (i = 0; i < strlen(buf[1]) - 1; i++)
+                            {
+                                tmp[i] = buf[1][i];
+                            }
+                            if (tmp[i-1] != '/')
+                                tmp[i] = '/';
+                            else
+                                tmp[i] = '\0';
+                            for (i = i + 1; i < buf_size; i++)
+                                tmp[i] = '\0';
+
+                            printf("TMP: %s\n", tmp);
+
+                            DIR* d = opendir(tmp);
+                            if (d == NULL)
+                                result = "Wrong path\n";
+                            else
+                            {
+                                closedir(d);
+                                for (i = 0; i < strlen(tmp); i++)
+                                {
+                                    current_dir[i] = tmp[i];
+                                }
+
+                                current_dir[i] = '\n';
+                                curr_length = i;
+                                result = "Current directory was changed\n";
+                            }
+                            free(tmp);
+                        }
+                    }
+                    else
+                    {
+                        result = "wrong command\n";
                     }
                 }
 
-            }
-            else
-            {
-                if (strcasecmp(buf[0],"CWD") == 0)
-                {
-                    printf("cwd\n");
+                write(cfd, result, strlen(result)*sizeof(char));
+                result = "";
+                command = "";
+                buf[0]="\n";
+                buf[1]="\n";
+
                 }
-                else
-                {
-                    result = "wrong command\n";
-                }
-            }
-            //free(command);
-           // free(buf[0]);
-            //free(buf[1]);
 
-            write(client_sfd, result, strlen(result)*sizeof(char));
-            //free(result);
-            //}
-            close(server_sockfd);
-            close(client_sfd);
+           }
+                close(cfd);
+                exit(0);
 
-            exit(0);
-            }
-
+        }
             epoll_ctl(efd, EPOLL_CTL_DEL, cfd, &evlist[j]);
-            close(cfd);
+            close(client_sockfd);
         }
 
     }
+
     close(server_sockfd);
-    //shmdt(shm);
-    //shmctl(shmid, IPC_RMID, NULL);
 }
 
 char* get_list_answer_file(list_answer_file_t* answer)
 {
     char* result = (char*)malloc(sizeof(char)*buf_size);
-
-    if (S_IFREG & answer->permissions) {
-        result[0] = '-'; }
-    else
+    result[0] = '-';
+    switch (answer->permissions & S_IFMT)
     {
-        if (S_IFDIR & answer->permissions) {
-            result[0] = 'd'; }
-        else
-        {
-            if (S_IFCHR & answer->permissions) {
-                result[0] = 'c'; }
-            else
-            {
-                if(S_IFIFO & answer->permissions) {
-                    result[0] = 'p'; }
-                else
-                {
-                    if (S_IFSOCK & answer->permissions) {
-                        result[0] = 's'; }
-                    else
-                    {
-                        if (S_IFBLK & answer->permissions) {
-                            result[0] = 'b'; }
-                        else
-                        {
-                            if (S_IFLNK & answer->permissions) {
-                                result[0] = 'l'; }
-                        }
-                    }
-                }
-            }
-        }
+    case S_IFDIR: {
+        result[0] = 'd';
+        break;
+    }
+    case S_IFCHR: {
+        result[0] = 'c';
+        break;
+    }
+    case S_IFBLK: {
+        result[0] = 'b';
+        break;
+    }
+    case S_IFREG : {
+        result[0] = '-';
+        break;
+    }
+    case S_IFLNK: {
+        result[0] = 'l';
+        break;
+    }
+    case S_IFSOCK: {
+        result[0] = 's';
+        break;
+    }
     }
 
-    if (S_IRUSR & answer->permissions)
-        result[1] = 'r';
-    else
-        result[1] = '-';
-    if (S_IWUSR & answer->permissions)
-        result[2] = 'w';
-    else
-        result[2] = '-';
-    if (S_IXUSR & answer->permissions)
-        result[3] = 'x';
-    else
-        result[3] = '-';
-    if (S_IRGRP & answer->permissions)
-        result[4] = 'r';
-    else
-        result[4] = '-';
-    if (S_IWGRP & answer->permissions)
-        result[5] = 'w';
-    else
-        result[5] = '-';
-    if (S_IXGRP & answer->permissions)
-        result[6] = 'x';
-    else
-        result[6] = '-';
-    if (S_IROTH & answer->permissions)
-        result[7] = 'r';
-    else
-        result[7] = '-';
-    if (S_IWOTH & answer->permissions)
-        result[8] = 'w';
-    else
-        result[8] = '-';
-    if (S_IXOTH & answer->permissions)
-        result[9] = 'x';
-    else
-        result[9] = '-';
+    int q = 1000;
+    int perm = 0;
+    for (perm = 0; perm < 3; perm++)
+    {
+        int x = (answer->permissions/q)%10;
+        if (x > 3)
+        {
+            result[1 + perm*3] = 'r';
+            x -= 4;
+        }
+        else
+        {
+            result[1 + perm*3] = '-';
+        }
+        if (x % 2)
+        {
+            result[3 + perm*3] = 'x';
+            x--;
+        }
+        else
+        {
+            result[3 + perm*3] = '-';
+        }
+        if (x > 0)
+        {
+            result[2 + perm*3] = 'w';
+        }
+        else
+        {
+            result[2 + perm*3] = '-';
+        }
+        q /= 10;
+    }
 
     result[10] = ' ';
     char* l = (char*)malloc(sizeof(char)*3);
@@ -477,7 +481,6 @@ char* get_list_answer_file(list_answer_file_t* answer)
     free(l);
     l = (char*)malloc(sizeof(char)*40);
     struct tm* t = localtime(&answer->time.tv_sec);
-    //strftime(l, sizeof(l), "%m-%d %H:%M:%S\n", t);
     sprintf(l, "%i-%i %i:%i:%i\n", t->tm_mon, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
     j = 0;
     for (j = 0; j < strlen(l); j++)
@@ -497,9 +500,7 @@ char* get_list_answer_file(list_answer_file_t* answer)
         result[j+i] = answer->filename[j];
 
     i += j - 1;
-    //result[i] = ' ';
     i++;
     result[i] = '\n';
-
     return result;
 }
